@@ -2,7 +2,10 @@
 package main
 
 import (
+	"context"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/caarlos0/env/v11"
 	"github.com/fatih/color"
@@ -25,5 +28,22 @@ func main() {
 	if err := env.Parse(&cfg); err != nil {
 		color.Red("Failed to parse env: %v", err)
 		return
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sig
+		cancel()
+	}()
+
+	color.Green("Connecting to Slack...")
+	l := newListener(cfg.SlackBotToken, cfg.SlackAppToken)
+	if err := l.run(ctx); err != nil && err != context.Canceled {
+		color.Red("Error: %v", err)
+		os.Exit(1)
 	}
 }
