@@ -7,6 +7,7 @@
 *.dll
 *.so
 *.dylib
+slack-terminal-client
 
 # Test binary, built with `go test -c`
 *.test
