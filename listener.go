@@ -2,13 +2,11 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/fatih/color"
 	"github.com/gorilla/websocket"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
@@ -20,9 +18,10 @@ type listener struct {
 	socket       *socketmode.Client
 	userCache    map[string]string
 	channelCache map[string]string
+	onMessage    func(string)
 }
 
-func newListener(botToken, appToken string) *listener {
+func newListener(botToken, appToken string, onMessage func(string)) *listener {
 	dialer := *websocket.DefaultDialer
 	dialer.NetDialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 		nd := &net.Dialer{}
@@ -43,6 +42,7 @@ func newListener(botToken, appToken string) *listener {
 		socket:       socket,
 		userCache:    make(map[string]string),
 		channelCache: make(map[string]string),
+		onMessage:    onMessage,
 	}
 }
 
@@ -92,16 +92,7 @@ func (l *listener) handleAPIEvent(evt slackevents.EventsAPIEvent) {
 	user := l.resolveUser(msg.User)
 	channel := l.resolveChannel(msg.Channel)
 
-	timeColor := color.New(color.FgHiBlack)
-	userColor := color.New(color.FgCyan, color.Bold)
-	channelColor := color.New(color.FgGreen)
-
-	fmt.Printf("%s %s %s: %s\n",
-		timeColor.Sprint(ts.Format("15:04:05")),
-		userColor.Sprintf("@%s", user),
-		channelColor.Sprintf("(#%s)", channel),
-		msg.Text,
-	)
+	l.onMessage(formatMsg(ts.Format("15:04:05"), user, channel, msg.Text))
 }
 
 func (l *listener) resolveUser(id string) string {
