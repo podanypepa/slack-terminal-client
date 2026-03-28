@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/fatih/color"
+	"github.com/gorilla/websocket"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 	"github.com/slack-go/slack/socketmode"
@@ -21,8 +23,21 @@ type listener struct {
 }
 
 func newListener(botToken, appToken string) *listener {
+	dialer := *websocket.DefaultDialer
+	dialer.NetDialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		nd := &net.Dialer{}
+		conn, err := nd.DialContext(ctx, network, addr)
+		if err != nil {
+			return nil, err
+		}
+		if tc, ok := conn.(*net.TCPConn); ok {
+			_ = tc.SetKeepAlive(true)
+			_ = tc.SetKeepAlivePeriod(5 * time.Second)
+		}
+		return conn, nil
+	}
 	api := slack.New(botToken, slack.OptionAppLevelToken(appToken))
-	socket := socketmode.New(api)
+	socket := socketmode.New(api, socketmode.OptionDialer(&dialer))
 	return &listener{
 		api:          api,
 		socket:       socket,
@@ -46,12 +61,16 @@ func (l *listener) handleEvents(ctx context.Context) {
 				return
 			}
 			if evt.Type != socketmode.EventTypeEventsAPI {
-				l.socket.Ack(*evt.Request)
+				if evt.Request != nil && evt.Request.EnvelopeID != "" {
+					l.socket.Ack(*evt.Request)
+				}
 				continue
 			}
 			apiEvent, ok := evt.Data.(slackevents.EventsAPIEvent)
 			if !ok {
-				l.socket.Ack(*evt.Request)
+				if evt.Request != nil && evt.Request.EnvelopeID != "" {
+					l.socket.Ack(*evt.Request)
+				}
 				continue
 			}
 			l.socket.Ack(*evt.Request)
