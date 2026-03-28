@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
+	emoji "github.com/kyokomi/emoji/v2"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -239,7 +240,7 @@ func formatMsg(ts, user, channel, text string) string {
 		timeStyle.Render(ts),
 		userStyle.Render("@"+user),
 		channelStyle.Render("(#"+channel+")"),
-		text,
+		emoji.Sprint(text),
 	)
 }
 
