@@ -42,6 +42,7 @@ type model struct {
 	input     textinput.Model
 	channels  []slack.Channel
 	chCursor  int
+	chFilter  string
 	chLoading bool
 	selCh     *slack.Channel
 	api       *slack.Client
@@ -110,27 +111,40 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case stateChannelSelect:
+			filtered := m.filteredChannels()
 			switch msg.String() {
-			case "esc", "q":
+			case "esc":
 				m.state = stateMessages
+				m.chFilter = ""
 			case "up", "k":
 				if m.chCursor > 0 {
 					m.chCursor--
 				}
 			case "down", "j":
-				if m.chCursor < len(m.channels)-1 {
+				if m.chCursor < len(filtered)-1 {
 					m.chCursor++
 				}
 			case "enter":
-				if len(m.channels) > 0 {
-					ch := m.channels[m.chCursor]
+				if len(filtered) > 0 {
+					ch := filtered[m.chCursor]
 					m.selCh = &ch
 					m.input.SetValue("")
 					m.input.Prompt = channelStyle.Render("#"+ch.Name) + " > "
 					m.input.Focus()
 					m.vp.Height = m.height - 2
+					m.chFilter = ""
 					m.state = stateCompose
 					return m, textinput.Blink
+				}
+			case "backspace":
+				if len(m.chFilter) > 0 {
+					m.chFilter = m.chFilter[:len(m.chFilter)-1]
+					m.chCursor = 0
+				}
+			default:
+				if len(msg.Runes) == 1 {
+					m.chFilter += string(msg.Runes)
+					m.chCursor = 0
 				}
 			}
 
@@ -175,10 +189,21 @@ func (m model) View() string {
 	case stateChannelSelect:
 		var sb strings.Builder
 		sb.WriteString("\n  " + lipgloss.NewStyle().Bold(true).Render("Select channel") + "\n\n")
+		filter := m.chFilter
+		if filter == "" {
+			filter = dimStyle.Render("type to filter...")
+		} else {
+			filter = channelStyle.Render(filter)
+		}
+		sb.WriteString("  / " + filter + "\n\n")
 		if m.chLoading {
 			sb.WriteString(dimStyle.Render("  loading..."))
 		} else {
-			for i, ch := range m.channels {
+			filtered := m.filteredChannels()
+			if len(filtered) == 0 {
+				sb.WriteString(dimStyle.Render("  no channels found"))
+			}
+			for i, ch := range filtered {
 				if i == m.chCursor {
 					sb.WriteString("  " + cursorStyle.Render("> #"+ch.Name) + "\n")
 				} else {
@@ -194,6 +219,19 @@ func (m model) View() string {
 	}
 
 	return ""
+}
+
+func (m model) filteredChannels() []slack.Channel {
+	if m.chFilter == "" {
+		return m.channels
+	}
+	var result []slack.Channel
+	for _, ch := range m.channels {
+		if strings.Contains(strings.ToLower(ch.Name), strings.ToLower(m.chFilter)) {
+			result = append(result, ch)
+		}
+	}
+	return result
 }
 
 func formatMsg(ts, user, channel, text string) string {
