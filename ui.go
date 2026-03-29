@@ -152,11 +152,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case slackMsgReceived:
 		m.messages = append(m.messages, msg.text)
+		if len(m.messages) > 500 {
+			m.messages = m.messages[len(m.messages)-500:]
+		}
 		m.vp.SetContent(strings.Join(m.messages, "\n"))
 		m.vp.GotoBottom()
 
 	case historyLoadedMsg:
 		m.messages = append(m.messages, msg.messages...)
+		if len(m.messages) > 500 {
+			m.messages = m.messages[len(m.messages)-500:]
+		}
 		m.vp.SetContent(strings.Join(m.messages, "\n"))
 		m.vp.GotoBottom()
 
@@ -170,9 +176,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.messages = append(m.messages, dimStyle.Render(fmt.Sprintf("!! Error sending message: %v", msg.err)))
 		} else {
-			// Zprávu přidáme do UI až po potvrzení od Slacku (nebo ji tam můžeme nechat a jen označit jako OK)
-			// Pro jednoduchost ji přidáme sem, aby uživatel viděl, že "prošla"
 			m.messages = append(m.messages, formatMsg(time.Now().Format("15:04:05"), "me", msg.channel, msg.text))
+		}
+		if len(m.messages) > 500 {
+			m.messages = m.messages[len(m.messages)-500:]
 		}
 		m.vp.SetContent(strings.Join(m.messages, "\n"))
 		m.vp.GotoBottom()
@@ -211,10 +218,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case "enter":
 				if len(filtered) > 0 {
-					ch := filtered[m.chCursor]
-					m.selCh = &ch
+					m.selCh = &filtered[m.chCursor]
 					m.input.SetValue("")
-					m.input.Prompt = channelStyle.Render("#"+ch.Name) + " > "
+					m.input.Prompt = channelStyle.Render("#"+m.selCh.Name) + " > "
 					m.input.Focus()
 					m.vp.Height = m.height - 2
 					m.chFilter = ""
