@@ -337,12 +337,22 @@ func (m model) filteredChannels() []slack.Channel {
 }
 
 func formatMsg(ts, user, channel, text string) string {
-	return fmt.Sprintf("%s %s %s: %s",
+	prefix := fmt.Sprintf("%s %s %s: ",
 		timeStyle.Render(ts),
 		userStyle.Render("@"+user),
 		channelStyle.Render("(#"+channel+")"),
-		emoji.Sprint(text),
 	)
+
+	indentWidth := lipgloss.Width(prefix)
+	indent := strings.Repeat(" ", indentWidth)
+
+	content := emoji.Sprint(text)
+	lines := strings.Split(content, "\n")
+	for i := 1; i < len(lines); i++ {
+		lines[i] = indent + lines[i]
+	}
+
+	return prefix + strings.Join(lines, "\n")
 }
 
 func loadChannels(api *slack.Client) tea.Cmd {
