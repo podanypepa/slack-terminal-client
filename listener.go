@@ -5,6 +5,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -18,6 +19,7 @@ type listener struct {
 	socket       *socketmode.Client
 	userCache    map[string]string
 	channelCache map[string]string
+	mu           sync.RWMutex
 	onMessage    func(string)
 }
 
@@ -96,10 +98,18 @@ func (l *listener) handleAPIEvent(evt slackevents.EventsAPIEvent) {
 }
 
 func (l *listener) resolveUser(id string) string {
+	l.mu.RLock()
 	if name, ok := l.userCache[id]; ok {
+		l.mu.RUnlock()
 		return name
 	}
+	l.mu.RUnlock()
+
 	user, err := l.api.GetUserInfo(id)
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
 	if err != nil {
 		l.userCache[id] = id
 		return id
@@ -113,10 +123,18 @@ func (l *listener) resolveUser(id string) string {
 }
 
 func (l *listener) resolveChannel(id string) string {
+	l.mu.RLock()
 	if name, ok := l.channelCache[id]; ok {
+		l.mu.RUnlock()
 		return name
 	}
+	l.mu.RUnlock()
+
 	ch, err := l.api.GetConversationInfo(&slack.GetConversationInfoInput{ChannelID: id})
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
 	if err != nil {
 		l.channelCache[id] = id
 		return id

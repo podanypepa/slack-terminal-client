@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -31,9 +32,76 @@ const (
 
 type slackMsgReceived struct{ text string }
 
+type historyLoadedMsg struct {
+	messages []string
+}
+
 type channelsLoadedMsg struct {
 	channels []slack.Channel
 	err      error
+}
+
+func loadHistory(api *slack.Client) tea.Cmd {
+	return func() tea.Msg {
+		// 1. Zjistíme, v jakých kanálech jsme
+		channels, _, err := api.GetConversations(&slack.GetConversationsParameters{
+			ExcludeArchived: true,
+			Types:           []string{"public_channel", "private_channel"},
+		})
+		if err != nil {
+			return historyLoadedMsg{messages: []string{dimStyle.Render("!! Error loading history channels: " + err.Error())}}
+		}
+
+		type msgRecord struct {
+			ts      string
+			content string
+		}
+		var allMsgs []msgRecord
+
+		// 2. Pro každý kanál načteme posledních 10 zpráv
+		for _, ch := range channels {
+			if !ch.IsMember {
+				continue
+			}
+			history, err := api.GetConversationHistory(&slack.GetConversationHistoryParameters{
+				ChannelID: ch.ID,
+				Limit:     10,
+			})
+			if err != nil {
+				continue
+			}
+
+			for _, m := range history.Messages {
+				if m.User == "" || m.BotID != "" {
+					continue
+				}
+				// Pro jednoduchost teď použijeme ID, 
+				// ale formátujeme to stejně jako v listeneru
+				ts := parseTimestamp(m.Timestamp)
+				allMsgs = append(allMsgs, msgRecord{
+					ts: m.Timestamp,
+					content: formatMsg(
+						ts.Format("15:04:05"),
+						m.User, // Zatím ID
+						ch.Name,
+						m.Text,
+					),
+				})
+			}
+		}
+
+		// 3. Seřadíme podle timestampu
+		sort.Slice(allMsgs, func(i, j int) bool {
+			return allMsgs[i].ts < allMsgs[j].ts
+		})
+
+		var result []string
+		for _, m := range allMsgs {
+			result = append(result, m.content)
+		}
+
+		return historyLoadedMsg{messages: result}
+	}
 }
 
 type model struct {
@@ -64,7 +132,7 @@ func newModel(api *slack.Client) model {
 }
 
 func (m model) Init() tea.Cmd {
-	return nil
+	return loadHistory(m.api)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -84,6 +152,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case slackMsgReceived:
 		m.messages = append(m.messages, msg.text)
+		m.vp.SetContent(strings.Join(m.messages, "\n"))
+		m.vp.GotoBottom()
+
+	case historyLoadedMsg:
+		m.messages = append(m.messages, msg.messages...)
 		m.vp.SetContent(strings.Join(m.messages, "\n"))
 		m.vp.GotoBottom()
 
