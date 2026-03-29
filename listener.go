@@ -86,18 +86,28 @@ func (l *listener) handleAPIEvent(evt slackevents.EventsAPIEvent) {
 		return
 	}
 	msg, ok := evt.InnerEvent.Data.(*slackevents.MessageEvent)
-	if !ok || msg.BotID != "" || msg.User == "" {
+	if !ok || (msg.User == "" && msg.BotID == "") {
 		return
 	}
 
 	ts := parseTimestamp(msg.TimeStamp)
-	user := l.resolveUser(msg.User)
+	
+	user := msg.User
+	if user == "" {
+		user = "bot:" + msg.BotID
+	} else {
+		user = l.resolveUser(user)
+	}
+
 	channel := l.resolveChannel(msg.Channel)
 
 	l.onMessage(formatMsg(ts.Format("15:04:05"), user, channel, msg.Text))
 }
 
 func (l *listener) resolveUser(id string) string {
+	if id == "" {
+		return "unknown"
+	}
 	l.mu.RLock()
 	if name, ok := l.userCache[id]; ok {
 		l.mu.RUnlock()

@@ -87,11 +87,19 @@ func loadHistory(api *slack.Client) tea.Cmd {
 			}
 
 			for _, m := range history.Messages {
-				if m.User == "" || m.BotID != "" {
+				if m.User == "" && m.BotID == "" {
 					continue
 				}
+				
 				ts := parseTimestamp(m.Timestamp)
-				userName := getUserName(m.User)
+				
+				var userName string
+				if m.User != "" {
+					userName = getUserName(m.User)
+				} else {
+					userName = "bot:" + m.BotID
+				}
+
 				allMsgs = append(allMsgs, msgRecord{
 					ts: m.Timestamp,
 					content: formatMsg(
