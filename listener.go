@@ -20,10 +20,11 @@ type listener struct {
 	userCache    map[string]string
 	channelCache map[string]string
 	mu           sync.RWMutex
+	botName      string
 	onMessage    func(string)
 }
 
-func newListener(botToken, appToken string, onMessage func(string)) *listener {
+func newListener(botToken, appToken, botName string, onMessage func(string)) *listener {
 	dialer := *websocket.DefaultDialer
 	dialer.NetDialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 		nd := &net.Dialer{}
@@ -44,6 +45,7 @@ func newListener(botToken, appToken string, onMessage func(string)) *listener {
 		socket:       socket,
 		userCache:    make(map[string]string),
 		channelCache: make(map[string]string),
+		botName:      botName,
 		onMessage:    onMessage,
 	}
 }
@@ -93,8 +95,8 @@ func (l *listener) handleAPIEvent(evt slackevents.EventsAPIEvent) {
 	ts := parseTimestamp(msg.TimeStamp)
 	
 	user := msg.User
-	if user == "" {
-		user = "bot:" + msg.BotID
+	if msg.BotID != "" {
+		user = l.botName
 	} else {
 		user = l.resolveUser(user)
 	}

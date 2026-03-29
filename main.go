@@ -38,8 +38,8 @@ func main() {
 		cancel()
 	}()
 
-	l := newListener(cfg.SlackBotToken, cfg.SlackAppToken, nil)
-	p := tea.NewProgram(newModel(l.api), tea.WithAltScreen())
+	l := newListener(cfg.SlackBotToken, cfg.SlackAppToken, cfg.BotName, nil)
+	p := tea.NewProgram(newModel(l.api, cfg.BotName), tea.WithAltScreen())
 	l.onMessage = func(text string) { p.Send(slackMsgReceived{text: text}) }
 
 	go func() {

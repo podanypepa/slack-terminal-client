@@ -41,7 +41,7 @@ type channelsLoadedMsg struct {
 	err      error
 }
 
-func loadHistory(api *slack.Client) tea.Cmd {
+func loadHistory(api *slack.Client, botName string) tea.Cmd {
 	return func() tea.Msg {
 		channels, _, err := api.GetConversations(&slack.GetConversationsParameters{
 			ExcludeArchived: true,
@@ -94,10 +94,10 @@ func loadHistory(api *slack.Client) tea.Cmd {
 				ts := parseTimestamp(m.Timestamp)
 				
 				var userName string
-				if m.User != "" {
-					userName = getUserName(m.User)
+				if m.BotID != "" {
+					userName = botName
 				} else {
-					userName = "bot:" + m.BotID
+					userName = getUserName(m.User)
 				}
 
 				allMsgs = append(allMsgs, msgRecord{
@@ -136,24 +136,26 @@ type model struct {
 	chLoading bool
 	selCh     *slack.Channel
 	api       *slack.Client
+	botName   string
 	width     int
 	height    int
 	ready     bool
 }
 
-func newModel(api *slack.Client) model {
+func newModel(api *slack.Client, botName string) model {
 	ti := textinput.New()
 	ti.CharLimit = 0
 
 	return model{
-		state: stateMessages,
-		api:   api,
-		input: ti,
+		state:   stateMessages,
+		api:     api,
+		input:   ti,
+		botName: botName,
 	}
 }
 
 func (m model) Init() tea.Cmd {
-	return loadHistory(m.api)
+	return loadHistory(m.api, m.botName)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -197,7 +199,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.messages = append(m.messages, dimStyle.Render(fmt.Sprintf("!! Error sending message: %v", msg.err)))
 		} else {
-			m.messages = append(m.messages, formatMsg(time.Now().Format("15:04:05"), "me", msg.channel, msg.text))
+			m.messages = append(m.messages, formatMsg(time.Now().Format("15:04:05"), m.botName, msg.channel, msg.text))
 		}
 		if len(m.messages) > 500 {
 			m.messages = m.messages[len(m.messages)-500:]
