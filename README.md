@@ -66,6 +66,9 @@ Create a `.env` file in the project root:
 ```env
 SLACK_BOT_TOKEN=xoxb-...
 SLACK_APP_TOKEN=xapp-...
+
+# Optional: customize your bot's display name (text or emoji). Default is "BOT".
+BOT_NAME=🤖
 ```
 
 ## Running
