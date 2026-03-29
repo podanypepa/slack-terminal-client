@@ -43,7 +43,6 @@ type channelsLoadedMsg struct {
 
 func loadHistory(api *slack.Client) tea.Cmd {
 	return func() tea.Msg {
-		// 1. Zjistíme, v jakých kanálech jsme
 		channels, _, err := api.GetConversations(&slack.GetConversationsParameters{
 			ExcludeArchived: true,
 			Types:           []string{"public_channel", "private_channel"},
@@ -52,13 +51,29 @@ func loadHistory(api *slack.Client) tea.Cmd {
 			return historyLoadedMsg{messages: []string{dimStyle.Render("!! Error loading history channels: " + err.Error())}}
 		}
 
+		userCache := make(map[string]string)
+		getUserName := func(id string) string {
+			if name, ok := userCache[id]; ok {
+				return name
+			}
+			user, err := api.GetUserInfo(id)
+			if err != nil {
+				return id
+			}
+			name := user.Profile.DisplayName
+			if name == "" {
+				name = user.Name
+			}
+			userCache[id] = name
+			return name
+		}
+
 		type msgRecord struct {
 			ts      string
 			content string
 		}
 		var allMsgs []msgRecord
 
-		// 2. Pro každý kanál načteme posledních 10 zpráv
 		for _, ch := range channels {
 			if !ch.IsMember {
 				continue
@@ -75,14 +90,13 @@ func loadHistory(api *slack.Client) tea.Cmd {
 				if m.User == "" || m.BotID != "" {
 					continue
 				}
-				// Pro jednoduchost teď použijeme ID, 
-				// ale formátujeme to stejně jako v listeneru
 				ts := parseTimestamp(m.Timestamp)
+				userName := getUserName(m.User)
 				allMsgs = append(allMsgs, msgRecord{
 					ts: m.Timestamp,
 					content: formatMsg(
 						ts.Format("15:04:05"),
-						m.User, // Zatím ID
+						userName,
 						ch.Name,
 						m.Text,
 					),
@@ -90,7 +104,6 @@ func loadHistory(api *slack.Client) tea.Cmd {
 			}
 		}
 
-		// 3. Seřadíme podle timestampu
 		sort.Slice(allMsgs, func(i, j int) bool {
 			return allMsgs[i].ts < allMsgs[j].ts
 		})
