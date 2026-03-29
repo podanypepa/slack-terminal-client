@@ -93,6 +93,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.channels = msg.channels
 		}
 
+	case messageSentMsg:
+		if msg.err != nil {
+			m.messages = append(m.messages, dimStyle.Render(fmt.Sprintf("!! Error sending message: %v", msg.err)))
+		} else {
+			// Zprávu přidáme do UI až po potvrzení od Slacku (nebo ji tam můžeme nechat a jen označit jako OK)
+			// Pro jednoduchost ji přidáme sem, aby uživatel viděl, že "prošla"
+			m.messages = append(m.messages, formatMsg(time.Now().Format("15:04:05"), "me", msg.channel, msg.text))
+		}
+		m.vp.SetContent(strings.Join(m.messages, "\n"))
+		m.vp.GotoBottom()
+
 	case tea.KeyMsg:
 		switch m.state {
 		case stateMessages:
@@ -157,16 +168,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.vp.Height = m.height - 1
 			case "enter":
 				text := m.input.Value()
+				var cmd tea.Cmd
 				if text != "" && m.selCh != nil {
-					ch := *m.selCh
-					go m.api.PostMessage(ch.ID, slack.MsgOptionText(text, false))
-					m.messages = append(m.messages, formatMsg(time.Now().Format("15:04:05"), "me", ch.Name, text))
-					m.vp.SetContent(strings.Join(m.messages, "\n"))
-					m.vp.GotoBottom()
+					cmd = sendMessage(m.api, m.selCh.ID, m.selCh.Name, text)
 				}
 				m.state = stateMessages
 				m.input.Blur()
 				m.vp.Height = m.height - 1
+				return m, cmd
 			default:
 				var cmd tea.Cmd
 				m.input, cmd = m.input.Update(msg)
@@ -264,5 +273,22 @@ func loadChannels(api *slack.Client) tea.Cmd {
 			cursor = next
 		}
 		return channelsLoadedMsg{channels: all}
+	}
+}
+
+type messageSentMsg struct {
+	text    string
+	channel string
+	err     error
+}
+
+func sendMessage(api *slack.Client, channelID, channelName, text string) tea.Cmd {
+	return func() tea.Msg {
+		_, _, err := api.PostMessage(channelID, slack.MsgOptionText(text, false))
+		return messageSentMsg{
+			text:    text,
+			channel: channelName,
+			err:     err,
+		}
 	}
 }
