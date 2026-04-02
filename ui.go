@@ -21,6 +21,7 @@ var (
 	channelStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
 	cursorStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
 	dimStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	mentionStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
 )
 
 type appState int
@@ -378,7 +379,7 @@ var mentionReUI = regexp.MustCompile(`<@([A-Z0-9]+)>`)
 func resolveMentions(text string, getName func(string) string) string {
 	return mentionReUI.ReplaceAllStringFunc(text, func(match string) string {
 		id := match[2 : len(match)-1]
-		return "@" + getName(id)
+		return mentionStyle.Render("@" + getName(id))
 	})
 }
 

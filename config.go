@@ -5,4 +5,5 @@ type Config struct {
 	SlackBotToken string `env:"SLACK_BOT_TOKEN,required"`
 	SlackAppToken string `env:"SLACK_APP_TOKEN,required"`
 	BotName       string `env:"BOT_NAME" envDefault:"BOT"`
+	MentionColor  string `env:"MENTION_COLOR" envDefault:"3"`
 }

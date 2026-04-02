@@ -8,6 +8,7 @@ import (
 
 	"github.com/caarlos0/env/v11"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/joho/godotenv"
 	"github.com/spf13/pflag"
 )
@@ -27,6 +28,8 @@ func main() {
 		os.Stderr.WriteString("Failed to parse env\n")
 		os.Exit(1)
 	}
+
+	mentionStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(cfg.MentionColor))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
