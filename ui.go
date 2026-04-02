@@ -535,13 +535,14 @@ func wrapLine(s string, width int) []string {
 	currentWidth := 0
 	for _, word := range words {
 		ww := lipgloss.Width(word)
-		if currentWidth == 0 {
+		switch {
+		case currentWidth == 0:
 			current = word
 			currentWidth = ww
-		} else if currentWidth+1+ww <= width {
+		case currentWidth+1+ww <= width:
 			current += " " + word
 			currentWidth += 1 + ww
-		} else {
+		default:
 			lines = append(lines, current)
 			current = word
 			currentWidth = ww

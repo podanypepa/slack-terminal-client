@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -18,19 +19,24 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		os.Stderr.WriteString(err.Error() + "\n")
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	var c string
 	pflag.StringVarP(&c, "config", "c", ".env", "Path to .env file")
 	pflag.Parse()
 
 	if err := godotenv.Load(c); err != nil {
-		os.Stderr.WriteString("No .env file found at " + c + "\n")
-		os.Exit(1)
+		return fmt.Errorf("no .env file found at %s", c)
 	}
 
 	var cfg Config
 	if err := env.Parse(&cfg); err != nil {
-		os.Stderr.WriteString("Failed to parse env\n")
-		os.Exit(1)
+		return fmt.Errorf("failed to parse env: %w", err)
 	}
 
 	mentionStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(cfg.MentionColor))
@@ -58,7 +64,7 @@ func main() {
 	}()
 
 	if _, err := p.Run(); err != nil {
-		os.Stderr.WriteString("UI error: " + err.Error() + "\n")
-		os.Exit(1)
+		return fmt.Errorf("UI error: %w", err)
 	}
+	return nil
 }
