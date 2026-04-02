@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -118,7 +119,7 @@ func loadHistory(api *slack.Client, botName string) tea.Cmd {
 						ts:      ts.Format("15:04:05"),
 						user:    userName,
 						channel: ch.Name,
-						text:    m.Text,
+						text:    resolveMentions(m.Text, getUserName),
 					},
 				})
 			}
@@ -370,6 +371,15 @@ func (m model) filteredChannels() []slack.Channel {
 		}
 	}
 	return result
+}
+
+var mentionReUI = regexp.MustCompile(`<@([A-Z0-9]+)>`)
+
+func resolveMentions(text string, getName func(string) string) string {
+	return mentionReUI.ReplaceAllStringFunc(text, func(match string) string {
+		id := match[2 : len(match)-1]
+		return "@" + getName(id)
+	})
 }
 
 // wrapLine splits a plain-text line into lines of at most width visual cells.

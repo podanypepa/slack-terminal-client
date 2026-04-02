@@ -103,7 +103,7 @@ func (l *listener) handleAPIEvent(evt slackevents.EventsAPIEvent) {
 
 	channel := l.resolveChannel(msg.Channel)
 
-	l.onMessage(ts.Format("15:04:05"), user, channel, msg.Text)
+	l.onMessage(ts.Format("15:04:05"), user, channel, resolveMentions(msg.Text, l.resolveUser))
 }
 
 func (l *listener) resolveUser(id string) string {
@@ -154,6 +154,7 @@ func (l *listener) resolveChannel(id string) string {
 	l.channelCache[id] = ch.Name
 	return ch.Name
 }
+
 
 func parseTimestamp(ts string) time.Time {
 	parts := strings.SplitN(ts, ".", 2)
