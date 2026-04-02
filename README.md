@@ -93,12 +93,16 @@ Or with a custom config path:
 | Key | Action |
 |---|---|
 | `/` | open channel selector |
-| `↑` / `↓` or `j` / `k` | navigate channels |
-| type letters | filter channels by name |
+| `↑` / `↓` or `j` / `k` | navigate channels / users |
+| type letters | filter channels or users by name |
 | `Backspace` | clear filter character |
-| `Enter` | select channel / send message |
+| `Enter` | select channel / send message / insert mention |
 | `Esc` | cancel / go back |
 | `Ctrl+C` | quit |
+
+### Mentioning users
+
+While composing a message, type `@` after a space (or at the start) to open the user picker. Filter by typing, navigate with `↑`/`↓` or `j`/`k`, and press `Enter` to insert the mention. The selected user is inserted as a proper Slack mention — they will receive a notification.
 
 Messages are displayed as:
 
