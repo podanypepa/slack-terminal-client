@@ -5,7 +5,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	emoji "github.com/kyokomi/emoji/v2"
@@ -30,7 +29,12 @@ const (
 	stateMessages appState = iota
 	stateChannelSelect
 	stateCompose
+	stateMention
 )
+
+// mentionPickerLines is the fixed height of the mention picker:
+// 1 filter line + 5 result lines + 1 hint line + 1 separator = 8
+const mentionPickerLines = 8
 
 type rawMsg struct {
 	ts      string
@@ -53,6 +57,11 @@ type historyLoadedMsg struct {
 type channelsLoadedMsg struct {
 	channels []slack.Channel
 	err      error
+}
+
+type usersLoadedMsg struct {
+	users []slack.User
+	err   error
 }
 
 func loadHistory(api *slack.Client, botName string) tea.Cmd {
@@ -139,21 +148,32 @@ func loadHistory(api *slack.Client, botName string) tea.Cmd {
 	}
 }
 
+func loadUsers(api *slack.Client) tea.Cmd {
+	return func() tea.Msg {
+		users, err := api.GetUsers()
+		return usersLoadedMsg{users: users, err: err}
+	}
+}
+
 type model struct {
-	state     appState
-	messages  []rawMsg
-	vp        viewport.Model
-	input     textinput.Model
-	channels  []slack.Channel
-	chCursor  int
-	chFilter  string
-	chLoading bool
-	selCh     *slack.Channel
-	api       *slack.Client
-	botName   string
-	width     int
-	height    int
-	ready     bool
+	state          appState
+	messages       []rawMsg
+	vp             viewport.Model
+	input          textinput.Model
+	channels       []slack.Channel
+	chCursor       int
+	chFilter       string
+	chLoading      bool
+	selCh          *slack.Channel
+	mentionUsers   []slack.User
+	mentionCursor  int
+	mentionFilter  string
+	mentionLoading bool
+	api            *slack.Client
+	botName        string
+	width          int
+	height         int
+	ready          bool
 }
 
 func newModel(api *slack.Client, botName string) model {
@@ -218,22 +238,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.channels = msg.channels
 		}
 
+	case usersLoadedMsg:
+		m.mentionLoading = false
+		if msg.err == nil {
+			m.mentionUsers = msg.users
+		}
+
 	case messageSentMsg:
 		if msg.err != nil {
 			m.messages = append(m.messages, rawMsg{text: dimStyle.Render(fmt.Sprintf("!! Error sending message: %v", msg.err))})
-		} else {
-			m.messages = append(m.messages, rawMsg{
-				ts:      time.Now().Format("15:04:05"),
-				user:    m.botName,
-				channel: msg.channel,
-				text:    msg.text,
-			})
+			if len(m.messages) > 500 {
+				m.messages = m.messages[len(m.messages)-500:]
+			}
+			m.vp.SetContent(m.viewportContent())
+			m.vp.GotoBottom()
 		}
-		if len(m.messages) > 500 {
-			m.messages = m.messages[len(m.messages)-500:]
-		}
-		m.vp.SetContent(m.viewportContent())
-		m.vp.GotoBottom()
+		// On success: don't add locally — the socket delivers the message back
+		// with mentions already resolved, avoiding duplicates.
 
 	case tea.KeyMsg:
 		switch m.state {
@@ -306,10 +327,66 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.input.Blur()
 				m.vp.Height = m.height - 1
 				return m, cmd
+			case "@":
+				// Trigger mention picker only when @ follows a space or at start.
+				val := m.input.Value()
+				if val == "" || strings.HasSuffix(val, " ") {
+					m.state = stateMention
+					m.mentionCursor = 0
+					m.mentionFilter = ""
+					m.vp.Height = m.height - 2 - mentionPickerLines
+					if m.vp.Height < 1 {
+						m.vp.Height = 1
+					}
+					if len(m.mentionUsers) == 0 {
+						m.mentionLoading = true
+						cmds = append(cmds, loadUsers(m.api))
+					}
+				} else {
+					var cmd tea.Cmd
+					m.input, cmd = m.input.Update(msg)
+					cmds = append(cmds, cmd)
+				}
 			default:
 				var cmd tea.Cmd
 				m.input, cmd = m.input.Update(msg)
 				cmds = append(cmds, cmd)
+			}
+
+		case stateMention:
+			filtered := m.filteredUsers()
+			switch msg.String() {
+			case "esc":
+				m.state = stateCompose
+				m.mentionFilter = ""
+				m.vp.Height = m.height - 2
+			case "up", "k":
+				if m.mentionCursor > 0 {
+					m.mentionCursor--
+				}
+			case "down", "j":
+				if m.mentionCursor < len(filtered)-1 && m.mentionCursor < 4 {
+					m.mentionCursor++
+				}
+			case "enter":
+				if len(filtered) > 0 {
+					u := filtered[m.mentionCursor]
+					m.input.SetValue(m.input.Value() + "<@" + u.ID + "> ")
+				}
+				m.state = stateCompose
+				m.mentionFilter = ""
+				m.vp.Height = m.height - 2
+			case "backspace":
+				if len(m.mentionFilter) > 0 {
+					runes := []rune(m.mentionFilter)
+					m.mentionFilter = string(runes[:len(runes)-1])
+					m.mentionCursor = 0
+				}
+			default:
+				if len(msg.Runes) == 1 {
+					m.mentionFilter += string(msg.Runes)
+					m.mentionCursor = 0
+				}
 			}
 		}
 	}
@@ -356,6 +433,46 @@ func (m model) View() string {
 
 	case stateCompose:
 		return m.vp.View() + "\n" + m.input.View()
+
+	case stateMention:
+		var sb strings.Builder
+		sb.WriteString(m.vp.View())
+		sb.WriteString("\n")
+
+		// Filter line
+		filter := m.mentionFilter
+		if filter == "" {
+			filter = dimStyle.Render("type to filter...")
+		} else {
+			filter = mentionStyle.Render(filter)
+		}
+		sb.WriteString("  @ " + filter + "\n")
+
+		// Result lines (always 5 slots to keep layout stable)
+		if m.mentionLoading {
+			sb.WriteString(dimStyle.Render("  loading users...") + "\n")
+			for i := 1; i < 5; i++ {
+				sb.WriteString("\n")
+			}
+		} else {
+			filtered := m.filteredUsers()
+			for i := 0; i < 5; i++ {
+				if i >= len(filtered) {
+					sb.WriteString("\n")
+					continue
+				}
+				name := userDisplayName(filtered[i])
+				if i == m.mentionCursor {
+					sb.WriteString("  " + cursorStyle.Render("> @"+name) + "\n")
+				} else {
+					sb.WriteString(dimStyle.Render("    @"+name) + "\n")
+				}
+			}
+		}
+
+		sb.WriteString(dimStyle.Render("  ↑/↓ or j/k · enter · esc") + "\n")
+		sb.WriteString(m.input.View())
+		return sb.String()
 	}
 
 	return ""
@@ -372,6 +489,27 @@ func (m model) filteredChannels() []slack.Channel {
 		}
 	}
 	return result
+}
+
+func (m model) filteredUsers() []slack.User {
+	var result []slack.User
+	for _, u := range m.mentionUsers {
+		if u.Deleted || u.IsBot || u.ID == "USLACKBOT" {
+			continue
+		}
+		name := userDisplayName(u)
+		if m.mentionFilter == "" || strings.Contains(strings.ToLower(name), strings.ToLower(m.mentionFilter)) {
+			result = append(result, u)
+		}
+	}
+	return result
+}
+
+func userDisplayName(u slack.User) string {
+	if u.Profile.DisplayName != "" {
+		return u.Profile.DisplayName
+	}
+	return u.Name
 }
 
 var mentionReUI = regexp.MustCompile(`<@([A-Z0-9]+)>`)
