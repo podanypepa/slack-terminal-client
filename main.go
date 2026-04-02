@@ -40,7 +40,9 @@ func main() {
 
 	l := newListener(cfg.SlackBotToken, cfg.SlackAppToken, cfg.BotName, nil)
 	p := tea.NewProgram(newModel(l.api, cfg.BotName), tea.WithAltScreen())
-	l.onMessage = func(text string) { p.Send(slackMsgReceived{text: text}) }
+	l.onMessage = func(ts, user, channel, text string) {
+		p.Send(slackMsgReceived{ts: ts, user: user, channel: channel, text: text})
+	}
 
 	go func() {
 		if err := l.run(ctx); err != nil && err != context.Canceled {

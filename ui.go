@@ -30,10 +30,22 @@ const (
 	stateCompose
 )
 
-type slackMsgReceived struct{ text string }
+type rawMsg struct {
+	ts      string
+	user    string
+	channel string
+	text    string
+}
+
+type slackMsgReceived struct {
+	ts      string
+	user    string
+	channel string
+	text    string
+}
 
 type historyLoadedMsg struct {
-	messages []string
+	messages []rawMsg
 }
 
 type channelsLoadedMsg struct {
@@ -48,7 +60,7 @@ func loadHistory(api *slack.Client, botName string) tea.Cmd {
 			Types:           []string{"public_channel", "private_channel"},
 		})
 		if err != nil {
-			return historyLoadedMsg{messages: []string{dimStyle.Render("!! Error loading history channels: " + err.Error())}}
+			return historyLoadedMsg{messages: []rawMsg{{text: dimStyle.Render("!! Error loading history channels: " + err.Error())}}}
 		}
 
 		userCache := make(map[string]string)
@@ -69,8 +81,8 @@ func loadHistory(api *slack.Client, botName string) tea.Cmd {
 		}
 
 		type msgRecord struct {
-			ts      string
-			content string
+			sortTs string
+			msg    rawMsg
 		}
 		var allMsgs []msgRecord
 
@@ -90,9 +102,9 @@ func loadHistory(api *slack.Client, botName string) tea.Cmd {
 				if m.User == "" && m.BotID == "" {
 					continue
 				}
-				
+
 				ts := parseTimestamp(m.Timestamp)
-				
+
 				var userName string
 				if m.BotID != "" {
 					userName = botName
@@ -101,24 +113,24 @@ func loadHistory(api *slack.Client, botName string) tea.Cmd {
 				}
 
 				allMsgs = append(allMsgs, msgRecord{
-					ts: m.Timestamp,
-					content: formatMsg(
-						ts.Format("15:04:05"),
-						userName,
-						ch.Name,
-						m.Text,
-					),
+					sortTs: m.Timestamp,
+					msg: rawMsg{
+						ts:      ts.Format("15:04:05"),
+						user:    userName,
+						channel: ch.Name,
+						text:    m.Text,
+					},
 				})
 			}
 		}
 
 		sort.Slice(allMsgs, func(i, j int) bool {
-			return allMsgs[i].ts < allMsgs[j].ts
+			return allMsgs[i].sortTs < allMsgs[j].sortTs
 		})
 
-		var result []string
+		var result []rawMsg
 		for _, m := range allMsgs {
-			result = append(result, m.content)
+			result = append(result, m.msg)
 		}
 
 		return historyLoadedMsg{messages: result}
@@ -127,7 +139,7 @@ func loadHistory(api *slack.Client, botName string) tea.Cmd {
 
 type model struct {
 	state     appState
-	messages  []string
+	messages  []rawMsg
 	vp        viewport.Model
 	input     textinput.Model
 	channels  []slack.Channel
@@ -158,6 +170,14 @@ func (m model) Init() tea.Cmd {
 	return loadHistory(m.api, m.botName)
 }
 
+func (m model) viewportContent() string {
+	lines := make([]string, len(m.messages))
+	for i, msg := range m.messages {
+		lines[i] = formatMsg(msg.ts, msg.user, msg.channel, msg.text, m.width)
+	}
+	return strings.Join(lines, "\n")
+}
+
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
@@ -172,13 +192,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.vp.Width = msg.Width
 			m.vp.Height = msg.Height - 1
 		}
+		m.vp.SetContent(m.viewportContent())
 
 	case slackMsgReceived:
-		m.messages = append(m.messages, msg.text)
+		m.messages = append(m.messages, rawMsg{ts: msg.ts, user: msg.user, channel: msg.channel, text: msg.text})
 		if len(m.messages) > 500 {
 			m.messages = m.messages[len(m.messages)-500:]
 		}
-		m.vp.SetContent(strings.Join(m.messages, "\n"))
+		m.vp.SetContent(m.viewportContent())
 		m.vp.GotoBottom()
 
 	case historyLoadedMsg:
@@ -186,7 +207,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(m.messages) > 500 {
 			m.messages = m.messages[len(m.messages)-500:]
 		}
-		m.vp.SetContent(strings.Join(m.messages, "\n"))
+		m.vp.SetContent(m.viewportContent())
 		m.vp.GotoBottom()
 
 	case channelsLoadedMsg:
@@ -197,14 +218,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case messageSentMsg:
 		if msg.err != nil {
-			m.messages = append(m.messages, dimStyle.Render(fmt.Sprintf("!! Error sending message: %v", msg.err)))
+			m.messages = append(m.messages, rawMsg{text: dimStyle.Render(fmt.Sprintf("!! Error sending message: %v", msg.err))})
 		} else {
-			m.messages = append(m.messages, formatMsg(time.Now().Format("15:04:05"), m.botName, msg.channel, msg.text))
+			m.messages = append(m.messages, rawMsg{
+				ts:      time.Now().Format("15:04:05"),
+				user:    m.botName,
+				channel: msg.channel,
+				text:    msg.text,
+			})
 		}
 		if len(m.messages) > 500 {
 			m.messages = m.messages[len(m.messages)-500:]
 		}
-		m.vp.SetContent(strings.Join(m.messages, "\n"))
+		m.vp.SetContent(m.viewportContent())
 		m.vp.GotoBottom()
 
 	case tea.KeyMsg:
@@ -346,7 +372,44 @@ func (m model) filteredChannels() []slack.Channel {
 	return result
 }
 
-func formatMsg(ts, user, channel, text string) string {
+// wrapLine splits a plain-text line into lines of at most width visual cells.
+func wrapLine(s string, width int) []string {
+	if width <= 0 || lipgloss.Width(s) <= width {
+		return []string{s}
+	}
+	words := strings.Fields(s)
+	if len(words) == 0 {
+		return []string{s}
+	}
+	var lines []string
+	current := ""
+	currentWidth := 0
+	for _, word := range words {
+		ww := lipgloss.Width(word)
+		if currentWidth == 0 {
+			current = word
+			currentWidth = ww
+		} else if currentWidth+1+ww <= width {
+			current += " " + word
+			currentWidth += 1 + ww
+		} else {
+			lines = append(lines, current)
+			current = word
+			currentWidth = ww
+		}
+	}
+	if current != "" {
+		lines = append(lines, current)
+	}
+	return lines
+}
+
+func formatMsg(ts, user, channel, text string, width int) string {
+	// Pre-formatted messages (e.g. error strings) have no ts/user/channel.
+	if ts == "" {
+		return text
+	}
+
 	prefix := fmt.Sprintf("%s %s %s: ",
 		timeStyle.Render(ts),
 		userStyle.Render("@"+user),
@@ -355,14 +418,32 @@ func formatMsg(ts, user, channel, text string) string {
 
 	indentWidth := lipgloss.Width(prefix)
 	indent := strings.Repeat(" ", indentWidth)
+	contentWidth := width - indentWidth
 
 	content := emoji.Sprint(text)
-	lines := strings.Split(content, "\n")
-	for i := 1; i < len(lines); i++ {
-		lines[i] = indent + lines[i]
+	textLines := strings.Split(content, "\n")
+
+	var resultLines []string
+	for i, line := range textLines {
+		var wrapped []string
+		if contentWidth > 10 {
+			wrapped = wrapLine(line, contentWidth)
+		} else {
+			wrapped = []string{line}
+		}
+		if len(wrapped) == 0 {
+			wrapped = []string{""}
+		}
+		for j, wl := range wrapped {
+			if i == 0 && j == 0 {
+				resultLines = append(resultLines, prefix+wl)
+			} else {
+				resultLines = append(resultLines, indent+wl)
+			}
+		}
 	}
 
-	return prefix + strings.Join(lines, "\n")
+	return strings.Join(resultLines, "\n")
 }
 
 func loadChannels(api *slack.Client) tea.Cmd {
