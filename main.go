@@ -1,3 +1,7 @@
+// Package main implements a terminal-based Slack client that listens for messages in real-time and displays them in a user-friendly interface.
+// It uses the Bubble Tea framework for the UI and the caarlos0/env package for configuration management.
+// The application loads environment variables from a specified .env file, sets up signal handling for graceful shutdown, and
+// initializes a Slack listener to receive messages. When a message is received, it sends the message details to the UI for display.
 package main
 
 import (
