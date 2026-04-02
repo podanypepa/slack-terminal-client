@@ -75,14 +75,29 @@ BOT_NAME=🤖
 MENTION_COLOR=3
 ```
 
+## Development
+
+```bash
+make build    # compile
+make run      # compile and run
+make check    # go vet + gocritic
+make clean    # remove binary
+```
+
 ## Running
+
+```bash
+make run
+```
+
+Or manually:
 
 ```bash
 go build -o slack-terminal-client .
 ./slack-terminal-client
 ```
 
-Or with a custom config path:
+With a custom config path:
 
 ```bash
 ./slack-terminal-client -c /path/to/.env
