@@ -69,6 +69,10 @@ SLACK_APP_TOKEN=xapp-...
 
 # Optional: customize your bot's display name (text or emoji). Default is "BOT".
 BOT_NAME=🤖
+
+# Optional: color for @mentions in message text. Accepts ANSI 256-color codes or hex.
+# Default is "3" (yellow). Examples: "220" (bright yellow), "#ffcc00" (hex).
+MENTION_COLOR=3
 ```
 
 ## Running
