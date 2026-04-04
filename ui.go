@@ -7,10 +7,10 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
-	emoji "github.com/kyokomi/emoji/v2"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	emoji "github.com/kyokomi/emoji/v2"
 	"github.com/slack-go/slack"
 )
 
@@ -92,7 +92,7 @@ func loadHistory(api *slack.Client, botName string) tea.Cmd {
 		}
 
 		type msgRecord struct {
-			sortTs string
+			sortTS string
 			msg    rawMsg
 		}
 		var allMsgs []msgRecord
@@ -124,7 +124,7 @@ func loadHistory(api *slack.Client, botName string) tea.Cmd {
 				}
 
 				allMsgs = append(allMsgs, msgRecord{
-					sortTs: m.Timestamp,
+					sortTS: m.Timestamp,
 					msg: rawMsg{
 						ts:      ts.Format("15:04:05"),
 						user:    userName,
@@ -136,7 +136,7 @@ func loadHistory(api *slack.Client, botName string) tea.Cmd {
 		}
 
 		sort.Slice(allMsgs, func(i, j int) bool {
-			return allMsgs[i].sortTs < allMsgs[j].sortTs
+			return allMsgs[i].sortTS < allMsgs[j].sortTS
 		})
 
 		var result []rawMsg
@@ -217,7 +217,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.vp.SetContent(m.viewportContent())
 
 	case slackMsgReceived:
-		m.messages = append(m.messages, rawMsg{ts: msg.ts, user: msg.user, channel: msg.channel, text: msg.text})
+		m.messages = append(m.messages, rawMsg(msg))
 		if len(m.messages) > 500 {
 			m.messages = m.messages[len(m.messages)-500:]
 		}
@@ -253,8 +253,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.vp.SetContent(m.viewportContent())
 			m.vp.GotoBottom()
 		}
-		// On success: don't add locally — the socket delivers the message back
-		// with mentions already resolved, avoiding duplicates.
 
 	case tea.KeyMsg:
 		switch m.state {
@@ -334,10 +332,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.state = stateMention
 					m.mentionCursor = 0
 					m.mentionFilter = ""
-					m.vp.Height = m.height - 2 - mentionPickerLines
-					if m.vp.Height < 1 {
-						m.vp.Height = 1
-					}
+					m.vp.Height = max(1, m.height-2-mentionPickerLines)
 					if len(m.mentionUsers) == 0 {
 						m.mentionLoading = true
 						cmds = append(cmds, loadUsers(m.api))
@@ -456,7 +451,7 @@ func (m model) View() string {
 			}
 		} else {
 			filtered := m.filteredUsers()
-			for i := 0; i < 5; i++ {
+			for i := range 5 {
 				if i >= len(filtered) {
 					sb.WriteString("\n")
 					continue
