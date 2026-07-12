@@ -9,7 +9,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/joho/godotenv v1.5.1
-	github.com/kyokomi/emoji/v2 v2.2.13
+	github.com/kyokomi/emoji/v2 v2.2.14
 	github.com/slack-go/slack v0.27.0
 	github.com/spf13/pflag v1.0.10
 )
